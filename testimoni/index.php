@@ -4,45 +4,55 @@ include "../config/database.php";
 $kode = isset($_GET['kode']) ? $_GET['kode'] : null;
 $detail = null;
 $error = null;
+$alreadyTestimoni = false;
+if ($kode) {
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        $kode = $_GET['kode'] ?? 0;
+        $pdo = connect_db();
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $kode = $_GET['kode'] ?? 0;
-    $pdo = connect_db();
+        // cek nomor di database
+        $stmt = $pdo->prepare("
+            SELECT 
+                pemesanan.id AS pemesanan_id,
+                pemesanan.nama,
+                pemesanan.no_hp,
+                pemesanan.tanggal_pesan,
+                pemesanan.keterangan,
+                paket.nama_paket,
+                paket.harga_paket,
+                pemesanan.tarif
+            FROM pemesanan
+            LEFT JOIN paket ON paket.id = pemesanan.paket
+            WHERE pemesanan.kode_bayar = ? OR pemesanan.no_hp = ?
+        ");
+        $stmt->execute([$kode, $kode]);
+        $detail = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // cek nomor di database
-    $stmt = $pdo->prepare("
-        SELECT 
-            pemesanan.id AS pemesanan_id,
-            pemesanan.nama,
-            pemesanan.no_hp,
-            pemesanan.tanggal_pesan,
-            pemesanan.keterangan,
-            paket.nama_paket,
-            paket.harga_paket,
-            pemesanan.tarif
-        FROM pemesanan
-        LEFT JOIN paket ON paket.id = pemesanan.paket
-        WHERE pemesanan.kode_bayar = ? OR pemesanan.no_hp = ?
-    ");
-    $stmt->execute([$kode, $kode]);
-    $detail = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($detail) {
+            // cek apakah sudah ada testimoni
+            $cekTestimoni = $pdo->prepare("SELECT id FROM testimoni WHERE pemesanan_id = ?");
+            $cekTestimoni->execute([$detail['pemesanan_id']]);
+            if ($cekTestimoni->fetch()) {
+                $alreadyTestimoni = true;
+            }
 
-    if ($detail) {
-        // ambil total pembayaran
-        $stmt2 = $pdo->prepare("SELECT SUM(nominal) as total_bayar FROM pembayaran WHERE pemesanan_id = ? AND status = ? ");
-        $stmt2->execute([$detail['pemesanan_id'], 'success']);
-        $bayar = $stmt2->fetch(PDO::FETCH_ASSOC);
+            // ambil total pembayaran
+            $stmt2 = $pdo->prepare("SELECT SUM(nominal) as total_bayar FROM pembayaran WHERE pemesanan_id = ? AND status = ? ");
+            $stmt2->execute([$detail['pemesanan_id'], 'success']);
+            $bayar = $stmt2->fetch(PDO::FETCH_ASSOC);
 
-        $total_bayar = $bayar['total_bayar'] ?? 0;
-        $sisa_tagihan = $detail['harga_paket'] - $total_bayar;
+            $total_bayar = $bayar['total_bayar'] ?? 0;
+            $sisa_tagihan = $detail['harga_paket'] - $total_bayar;
 
-        // simpan ke detail biar bisa dipakai di view
-        $detail['total_bayar'] = $total_bayar;
-        $detail['sisa_tagihan'] = $sisa_tagihan;
-    } else {
-        $error = "Kode tidak ditemukan dalam database!";
+            // simpan ke detail biar bisa dipakai di view
+            $detail['total_bayar'] = $total_bayar;
+            $detail['sisa_tagihan'] = $sisa_tagihan;
+        } else {
+            $error = "Kode tidak ditemukan dalam database!";
+        }
     }
 }
+
 
 ?>
 <!DOCTYPE html>
@@ -53,82 +63,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABmusic</title>
     <link rel="stylesheet" href="../assets/css/style_phone.css">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f9fafb;
-            padding: 30px;
-        }
-
-        .form-container {
-            max-width: 600px;
-            margin: auto;
-            background: #fff;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        label {
-            font-weight: bold;
-            color: #444;
-            margin-bottom: 6px;
-            display: block;
-        }
-
-        input,
-        textarea {
-            width: 95%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            outline: none;
-            transition: border 0.2s;
-        }
-
-        input:focus,
-        textarea:focus {
-            border-color: #f97316;
-            box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.3);
-        }
-
-        .star-rating {
-            display: flex;
-            gap: 8px;
-            font-size: 28px;
-            cursor: pointer;
-            margin-bottom: 16px;
-        }
-
-        .star {
-            color: #ccc;
-            transition: color 0.2s;
-        }
-
-        .star.active,
-        .star:hover,
-        .star:hover~.star {
-            color: #f97316;
-        }
-
-        button {
-            width: 100%;
-            background: #f97316;
-            border: none;
-            padding: 12px;
-            color: #fff;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        button:hover {
-            background: #ea580c;
-        }
-    </style>
 </head>
 
 <body>
@@ -143,9 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         <?php else: ?>
             <?php if ($error): ?>
                 <p class="error"><?= $error ?></p>
-            <?php endif; ?>
+            <?php elseif ($alreadyTestimoni): ?>
+                <!-- Info -->
+                <div class="flex items-start gap-2 bg-green-50 border border-green-200 text-green-700 p-3 rounded-lg mb-4">
+                    <span class="text-xl">✅</span>
+                    <p class="text-sm">
+                        Terima kasih, Anda sudah pernah mengisi testimoni untuk pesanan ini.
+                    </p>
+                </div>
 
-            <?php if ($detail): ?>
+                <!-- Tombol -->
+                <a href="/"
+                    class="block w-full text-center bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition duration-200">
+                    ⬅️ Kembali ke Awal
+                </a>
+
+            <?php else: ?>
                 <div class="detail-container">
                     <form method="post" action="testimoni.php">
                         <input type="hidden" name="pemesanan_id" value="<?= $detail['pemesanan_id'] ?>">

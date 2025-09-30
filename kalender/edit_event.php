@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary">💾 Simpan Perubahan</button>
-                        <a href="kalender.php" class="btn btn-secondary">Batal</a>
+                        <a href="/kalender/index.php" class="btn btn-secondary">Batal</a>
                     </div>
                 </form>
             </div>
